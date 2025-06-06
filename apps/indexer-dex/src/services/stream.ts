@@ -5,7 +5,7 @@ import { streamBlock } from 'nb-neardata';
 import config from '#config';
 import knex from '#libs/knex';
 import sentry from '#libs/sentry';
-import { syncRefFinance } from '#services/contracts/v2.ref-finance.near';
+import { syncRefFinance } from './contracts/v2.ref-finance.near.js';
 import { DataSource } from '#types/enum';
 
 const fetchBlocks = async (block: number, limit: number) => {

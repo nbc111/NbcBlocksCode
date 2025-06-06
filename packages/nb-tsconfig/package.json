@@ -2,6 +2,6 @@
   "name": "nb-tsconfig",
   "version": "0.1.0",
   "author": "NearBlocks",
-  "license": "Business Source License 1.1",
+  "license": "BUSL-1.1",
   "type": "module"
 }

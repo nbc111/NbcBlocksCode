@@ -1,247 +1,135 @@
 import { types } from 'nb-lake';
 import { logger } from 'nb-logger';
-import { DexEvents, DexPairs } from 'nb-types';
+import { DexEventType } from 'nb-types';
 
-import config from '#config';
-import knex from '#libs/knex';
-import {
-  decodeArgs,
-  decodeSuccessValue,
-  getEventIndex,
-  getPair,
-  getPrice,
-  getSwapPair,
-  getType,
-  isExecutionSuccess,
-} from '#libs/utils';
-import { DexEventIndex } from '#types/enum';
-import {
-  DexPairMeta,
-  FtOnTransferArgs,
-  PoolArgs,
-  SwapArgs,
-} from '#types/types';
+import { config } from '../../config.js';
+import { DexEvents, Swap, SwapArgs } from '../../types/types.js';
+import { knex } from '../db.js';
 
 const CONTRACT = 'v2.ref-finance.near';
-const EVENT_INDEX = DexEventIndex.V2_REF_FINANCE_NEAR;
-const POOL_METHOD = 'add_simple_pool';
+const EVENT_INDEX = '0';
+const POOL_METHOD = 'get_pool';
 const SWAP_METHODS = ['swap', 'ft_on_transfer'];
-const SWAP_PATTERN = /^Swapped (\d+) ([\S]+) for (\d+) ([\S]+)/;
 
-export const syncRefFinance = async (message: types.StreamerMessage) => {
-  const pairIds = new Set<string>();
-  const block = message.block.header.height;
-  const poolMap: Map<string, DexPairs> = new Map();
+export async function syncRefFinance(message: types.StreamerMessage): Promise<void> {
+  const { shards } = message;
 
-  const swaps = await Promise.all(
-    message.shards.flatMap((shard) => {
-      return shard.receiptExecutionOutcomes.flatMap((outcome) => {
-        if (
-          outcome.receipt &&
-          outcome.receipt.receiverId === CONTRACT &&
-          isExecutionSuccess(outcome.executionOutcome.outcome.status) &&
-          'Action' in outcome.receipt.receipt &&
-          outcome.receipt.receipt.Action.actions.length
-        ) {
-          const maker = outcome.receipt.receipt.Action.signerId;
+  for (const shard of shards) {
+    const { receiptExecutionOutcomes } = shard;
 
-          return outcome.receipt.receipt.Action.actions.flatMap(
-            (receiptAction) => {
-              if (
-                typeof receiptAction !== 'string' &&
-                'FunctionCall' in receiptAction
-              ) {
-                const args = receiptAction.FunctionCall.args;
-                const method = receiptAction.FunctionCall.methodName;
+    for (const outcome of receiptExecutionOutcomes) {
+      const { receipt, executionOutcome } = outcome;
+      const { predecessorId, receiverId } = receipt;
+      const { status, logs } = executionOutcome;
 
-                if (method === POOL_METHOD) {
-                  const [token0, token1] = decodeArgs<PoolArgs>(args).tokens;
-                  const [base, quote] = getPair(token0, token1);
-
-                  if (
-                    typeof outcome.executionOutcome.outcome.status !==
-                      'string' &&
-                    'SuccessValue' in outcome.executionOutcome.outcome.status &&
-                    outcome.executionOutcome.outcome.status.SuccessValue
-                  ) {
-                    const pool = decodeSuccessValue(
-                      outcome.executionOutcome.outcome.status.SuccessValue,
-                    );
-                    const data = {
-                      base,
-                      contract: CONTRACT,
-                      pool,
-                      price_token: null,
-                      price_usd: null,
-                      quote,
-                    };
-
-                    logger.info({ new_pool: data });
-
-                    poolMap.set(pool, data);
-                  }
-                }
-
-                if (
-                  outcome.executionOutcome.outcome.logs.length &&
-                  SWAP_METHODS.includes(method)
-                ) {
-                  const logs = outcome.executionOutcome.outcome.logs;
-                  const logsFiltered = logs.filter((log) =>
-                    SWAP_PATTERN.test(log),
-                  );
-
-                  return logsFiltered.flatMap((log, index) => {
-                    const match = log.match(SWAP_PATTERN);
-
-                    if (match && BigInt(match[1]) && BigInt(match[3])) {
-                      const pool = getPool(method, args, index);
-
-                      if (!pool) {
-                        logger.warn({
-                          args,
-                          block,
-                          index,
-                          method,
-                          receipt: outcome.executionOutcome.id,
-                        });
-                        throw Error('no pool');
-                      }
-
-                      pairIds.add(pool);
-
-                      return {
-                        amount0: match[1],
-                        amount1: match[3],
-                        maker,
-                        pool: String(pool),
-                        receipt: outcome.executionOutcome.id,
-                        timestamp: message.block.header.timestampNanosec,
-                        token0: match[2],
-                        token1: match[4],
-                      };
-                    }
-
-                    return [];
-                  });
-                }
-              }
-
-              return [];
-            },
-          );
-        }
-
-        return [];
-      });
-    }),
-  );
-
-  const [pairs, nearPair] = await Promise.all([
-    knex('dex_pairs as d')
-      .select<DexPairMeta[]>([
-        'd.*',
-        'b.decimals as baseDecimal',
-        'q.decimals as quoteDecimal',
-      ])
-      .join('ft_meta as b', 'd.base', '=', 'b.contract')
-      .join('ft_meta as q', 'd.quote', '=', 'q.contract')
-      .where('d.contract', CONTRACT)
-      .whereIn('d.pool', [...pairIds]),
-    knex('dex_pairs')
-      .where('contract', CONTRACT)
-      .where('base', config.NEAR_TOKEN)
-      .whereIn('quote', config.STABLE_TOKENS)
-      .whereNotNull('price_token')
-      .orderBy('updated_at', 'desc')
-      .first(),
-  ]);
-
-  const pairMap = new Map(pairs.map((pair) => [pair.pool, pair]));
-
-  const events = await Promise.all(
-    swaps.map(async (swap, index) => {
-      const pair = pairMap.get(swap.pool);
-
-      if (!pair) {
-        logger.warn({
-          block,
-          pairIds: [...pairIds],
-          pairMap: [...pairMap],
-          swap,
-        });
-        return;
+      if (receiverId !== CONTRACT) {
+        continue;
       }
 
-      const swapPair = getSwapPair(
-        pair,
-        swap.amount0,
-        swap.token0,
-        swap.amount1,
-        swap.token1,
-      );
-      const price = await getPrice(nearPair, pair, swapPair);
+      if (status.type !== 'SuccessValue') {
+        continue;
+      }
 
-      poolMap.set(swap.pool, {
-        base: pair.base,
-        contract: pair.contract,
-        pool: pair.pool,
-        price_token: price.priceToken,
-        price_usd: price.priceUsd,
-        quote: pair.quote,
-        updated_at: knex.raw('now()'),
-      });
+      for (const receiptAction of receipt.receiptActions) {
+        if (receiptAction.type !== 'FunctionCall') {
+          continue;
+        }
 
-      return {
-        amount_usd: price.amountUsd,
-        base_amount: price.baseAmount,
-        event_index: getEventIndex(swap.timestamp, index, EVENT_INDEX),
-        maker: swap.maker,
-        pair_id: pair.id!,
-        price_token: price.priceToken,
-        price_usd: price.priceUsd,
-        quote_amount: price.quoteAmount,
-        receipt_id: swap.receipt,
-        timestamp: swap.timestamp.slice(0, 10),
-        type: getType(pair, swap.token0),
-      };
-    }),
-  );
+        const { methodName, args } = receiptAction.FunctionCall;
 
-  const eventsFiltered = events.filter((e) => e) as DexEvents[];
-  const pairsSorted = [...poolMap.values()].sort((a, b) => +a.pool - +b.pool);
+        if (!SWAP_METHODS.includes(methodName)) {
+          continue;
+        }
 
-  if (pairsSorted.length) {
-    await knex('dex_pairs')
-      .insert(pairsSorted)
-      .onConflict(['contract', 'pool'])
-      .merge(['price_token', 'price_usd', 'updated_at']);
+        for (const log of logs) {
+          if (!log.includes(EVENT_INDEX)) {
+            continue;
+          }
+
+          const swapArgs = JSON.parse(Buffer.from(args, 'base64').toString()) as SwapArgs;
+          const swap = getSwap(swapArgs, log, predecessorId);
+
+          if (!swap) {
+            continue;
+          }
+
+          const pool = await getPool(swap.pool_id);
+
+          if (!pool) {
+            continue;
+          }
+
+          const swapEvent: DexEvents = {
+            amount_usd: 0,
+            maker: swap.maker,
+            pair_id: pool,
+            receipt_id: receipt.receiptId,
+            timestamp: Date.now(),
+            token0: swap.token0,
+            token1: swap.token1,
+            type: DexEventType.SWAP,
+          };
+
+          await knex('dex_events').insert(swapEvent);
+        }
+      }
+    }
   }
+}
 
-  if (eventsFiltered.length) {
-    await knex('dex_events')
-      .insert(eventsFiltered)
-      .onConflict(['event_index', 'timestamp'])
-      .ignore();
+function getSwap(args: SwapArgs, log: string, maker: string): Swap | undefined {
+  try {
+    const [token0, token1] = log.split('|')[1].split(',');
+
+    return {
+      amount0: '0',
+      amount1: '0',
+      maker,
+      pool: '',
+      receipt: '',
+      timestamp: Date.now(),
+      token0,
+      token1,
+      pool_id: args.pool_id,
+    };
+  } catch (error) {
+    logger.error({ error, log }, 'Failed to parse swap');
+    return undefined;
   }
-};
+}
 
-const getPool = (method: string, args: string, index: number) => {
-  if (method === SWAP_METHODS[0]) {
-    const actions = decodeArgs<SwapArgs>(args).actions;
-    const action = actions[index];
+async function getPool(poolId: number): Promise<string | undefined> {
+  try {
+    const response = await fetch(config.API_URL, {
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'dontcare',
+        method: 'query',
+        params: {
+          request_type: 'call_function',
+          finality: 'final',
+          account_id: CONTRACT,
+          method_name: POOL_METHOD,
+          args_base64: Buffer.from(JSON.stringify({ pool_id: poolId })).toString('base64'),
+        },
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+    });
 
-    return String(action.pool_id);
+    const data = await response.json() as { result: { result: string } };
+
+    if (!data.result.result) {
+      return undefined;
+    }
+
+    const pool = JSON.parse(Buffer.from(data.result.result).toString());
+
+    return pool.id;
+  } catch (error) {
+    logger.error({ error, poolId }, 'Failed to get pool');
+    return undefined;
   }
-
-  if (method === SWAP_METHODS[1]) {
-    const decoded = decodeArgs<FtOnTransferArgs>(args);
-    const actions = (JSON.parse(decoded.msg.replace(/\\/g, '')) as SwapArgs)
-      .actions;
-    const action = actions[index];
-
-    return String(action.pool_id);
-  }
-
-  return undefined;
-};
+}

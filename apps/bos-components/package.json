@@ -2,7 +2,7 @@
   "name": "bos-components",
   "version": "1.0.0",
   "author": "NearBlocks",
-  "license": "Business Source License 1.1",
+  "license": "BUSL-1.1",
   "type": "module",
   "scripts": {
     "build:css": "postcss src/public/styles.css -o ../app/public/common.css && postcss src/public/styles.css -o ../explorer-selector/public/common.css",

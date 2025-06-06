@@ -2,7 +2,7 @@
   "name": "nb-utils",
   "version": "0.1.2",
   "author": "NearBlocks",
-  "license": "Business Source License 1.1",
+  "license": "BUSL-1.1",
   "type": "module",
   "main": "dist/index.js",
   "types": "src/index.ts",
