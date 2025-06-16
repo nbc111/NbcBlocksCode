@@ -20,10 +20,13 @@
     "@types/react": "~18.3.1",
     "bos-workspace": "~1.0.0-alpha.19",
     "eslint-config-custom-next": "*",
+    "nb-near": "*",
     "nb-tsconfig": "*",
     "nb-types": "*",
-    "nb-near": "*",
     "near-social-vm-types": "~1.0.0",
     "typescript": "~5.2"
+  },
+  "dependencies": {
+    "bos-workspace": "^1.0.0-alpha.39"
   }
 }
