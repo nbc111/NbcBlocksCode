@@ -1,5 +1,4 @@
-import { types } from 'nb-lake';
-import { DexPairs, Network, DexEventType } from 'nb-types';
+import { DexPairs, DexEventType, Network } from 'nb-types';
 
 import { DataSource } from './enum.js';
 
@@ -20,11 +19,18 @@ export interface Config {
   S3_REGION: string;
   STABLE_TOKENS: string[];
   TESTNET_URL: string;
-  network: string;
+  network: Network;
   preloadSize: number;
   s3BucketName: string;
   s3RegionName: string;
   startBlockHeight: number;
+  dbUrl: string;
+  dbCa: string;
+  dbCert: string;
+  dbKey: string;
+  sentryDsn: string;
+  dataSource: DataSource;
+  delta: number;
 }
 
 export interface SwapArgs {
@@ -62,11 +68,16 @@ export interface Swap {
 }
 
 export interface DexEvents {
-  amount_usd: number;
+  amount_usd: string;
+  base_amount: string;
+  event_index: string;
   maker: string;
   pair_id: string;
+  price_token: string;
+  price_usd: string;
+  quote_amount: string;
   receipt_id: string;
-  timestamp: number;
+  timestamp: string;
   token0: string;
   token1: string;
   type: DexEventType;

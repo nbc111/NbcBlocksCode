@@ -1,6 +1,5 @@
 import { cleanEnv, str, num } from 'envalid';
 
-import { types } from 'nb-lake';
 import { Network } from 'nb-types';
 
 import { DataSource } from './types/enum.js';
@@ -23,6 +22,13 @@ const env = cleanEnv(process.env, {
   S3_REGION: str(),
   STABLE_TOKENS: str({ default: '[]' }),
   TESTNET_URL: str(),
+  DB_URL: str({ default: '' }),
+  DB_CA: str({ default: '' }),
+  DB_CERT: str({ default: '' }),
+  DB_KEY: str({ default: '' }),
+  SENTRY_DSN: str({ default: '' }),
+  DATA_SOURCE: str({ choices: [DataSource.FAST_NEAR, DataSource.NEAR_LAKE], default: DataSource.NEAR_LAKE }),
+  DELTA: num({ default: 1000 }),
 });
 
 const stableTokens = JSON.parse(env.STABLE_TOKENS) as string[];
@@ -44,9 +50,16 @@ export const config: Config = {
   S3_REGION: env.S3_REGION,
   STABLE_TOKENS: stableTokens,
   TESTNET_URL: env.TESTNET_URL,
-  network: env.NETWORK_ID,
+  network: env.NETWORK_ID as Network,
   preloadSize: 100,
   s3BucketName: env.S3_BUCKET,
   s3RegionName: env.S3_REGION,
   startBlockHeight: 45_753_330,
+  dbUrl: env.DB_URL || `postgresql://${env.DB_USER}:${env.DB_PASSWORD}@${env.DB_HOST}:${env.DB_PORT}/${env.DB_NAME}`,
+  dbCa: env.DB_CA,
+  dbCert: env.DB_CERT,
+  dbKey: env.DB_KEY,
+  sentryDsn: env.SENTRY_DSN,
+  dataSource: env.DATA_SOURCE,
+  delta: env.DELTA,
 } as const;

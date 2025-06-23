@@ -2,8 +2,8 @@ import { types } from 'nb-lake';
 import { logger } from 'nb-logger';
 import { DexEventType } from 'nb-types';
 
-import { config } from '../../config.js';
-import { DexEvents, Swap, SwapArgs } from '../../types/types.js';
+import { config } from '#config';
+import { DexEvents, Swap, SwapArgs } from '#types/types';
 import { knex } from '../db.js';
 
 const CONTRACT = 'v2.ref-finance.near';
@@ -60,14 +60,19 @@ export async function syncRefFinance(message: types.StreamerMessage): Promise<vo
           }
 
           const swapEvent: DexEvents = {
-            amount_usd: 0,
+            amount_usd: '0',
+            base_amount: '0',
+            event_index: '0',
             maker: swap.maker,
             pair_id: pool,
+            price_token: '0',
+            price_usd: '0',
+            quote_amount: '0',
             receipt_id: receipt.receiptId,
-            timestamp: Date.now(),
+            timestamp: new Date().toISOString(),
             token0: swap.token0,
             token1: swap.token1,
-            type: DexEventType.SWAP,
+            type: DexEventType.BUY,
           };
 
           await knex('dex_events').insert(swapEvent);

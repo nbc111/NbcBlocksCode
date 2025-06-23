@@ -1,20 +1,16 @@
-import { createRequire } from 'module';
-
 import { ExecutionStatus } from 'nb-neardata';
 import { DexEventType, DexPairs } from 'nb-types';
 
-import config from '#config';
-import { DexEventIndex } from '#types/enum';
 import { DexPairMeta, SwapPair } from '#types/types';
 
-import Big from './big.js';
-import knex from './knex.js';
+import { config } from '#config';
+import { DexEventIndex } from '#types/enum';
+import knex from '#libs/knex';
 
-const require = createRequire(import.meta.url);
-const json = require('nb-json');
+import Big from './big.js';
 
 export const decodeArgs = <T>(args: string): T =>
-  json.parse(decodeSuccessValue(args));
+  JSON.parse(decodeSuccessValue(args));
 
 export const decodeSuccessValue = (value: string) =>
   Buffer.from(value, 'base64').toString();

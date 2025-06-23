@@ -1,7 +1,7 @@
 import { logger } from 'nb-logger';
 import { Network } from 'nb-types';
 
-import config from '#config';
+import { config } from '#config';
 import knex from '#libs/knex';
 import sentry from '#libs/sentry';
 import { syncData } from '#services/stream';

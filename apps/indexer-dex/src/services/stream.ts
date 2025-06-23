@@ -1,41 +1,29 @@
 import { stream, types } from 'nb-lake';
 import { logger } from 'nb-logger';
 import { streamBlock } from 'nb-neardata';
+import { Network } from 'nb-types';
 
-import config from '#config';
+import { config } from '#config';
 import knex from '#libs/knex';
 import sentry from '#libs/sentry';
 import { syncRefFinance } from './contracts/v2.ref-finance.near.js';
 import { DataSource } from '#types/enum';
 
-const fetchBlocks = async (block: number, limit: number) => {
-  try {
-    const blocks = await knex('blocks')
-      .select('block_height')
-      .where('block_height', '>=', block)
-      .orderBy('block_height', 'asc')
-      .limit(limit);
-
-    return blocks.map((block) => block.block_height);
-  } catch (error) {
-    logger.error(error);
-    sentry.captureException(error);
-    return [];
-  }
-};
-
 const dexKey = 'dex';
-const lakeConfig: types.LakeConfig = {
-  blocksPreloadPoolSize: config.preloadSize,
-  fetchBlocks,
+const lakeConfig: types.EndpointConfig = {
+  hostname: config.API_URL,
+  path: '/',
+  port: 443,
+  protocol: 'https',
+  network: config.network as Network,
+  startBlockHeight: config.startBlockHeight,
   s3BucketName: config.s3BucketName,
   s3RegionName: config.s3RegionName,
-  startBlockHeight: config.startBlockHeight,
 };
 
-if (config.s3Endpoint) {
-  lakeConfig.s3ForcePathStyle = true;
-  lakeConfig.s3Endpoint = config.s3Endpoint;
+if (config.S3_ENDPOINT) {
+  // 注意：EndpointConfig 没有 s3ForcePathStyle 和 s3Endpoint 属性
+  // 这些可能需要通过其他方式设置
 }
 
 export const syncData = async () => {
@@ -81,24 +69,24 @@ export const syncData = async () => {
 
 export const onMessage = async (message: types.StreamerMessage) => {
   try {
-    if (message.block.header.height % 1000 === 0) {
-      logger.info(`syncing block: ${message.block.header.height}`);
+    if (message.block.height % 1000 === 0) {
+      logger.info(`syncing block: ${message.block.height}`);
     }
 
     await syncRefFinance(message);
 
-    if (message.block.header.height % 100 === 0) {
+    if (message.block.height % 100 === 0) {
       await knex('settings')
         .insert({
           key: dexKey,
-          value: { sync: message.block.header.height },
+          value: { sync: message.block.height },
         })
         .onConflict('key')
         .merge();
     }
   } catch (error) {
     logger.error(
-      `aborting... block ${message.block.header.height} ${message.block.header.hash}`,
+      `aborting... block ${message.block.height} ${message.block.hash}`,
     );
     logger.error(error);
     sentry.captureException(error);

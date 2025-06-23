@@ -2,7 +2,7 @@ import { ConnectionOptions } from 'tls';
 
 import { createKnex, Knex } from 'nb-knex';
 
-import config from '#config';
+import { config } from '#config';
 
 const ssl: ConnectionOptions = {
   rejectUnauthorized: true,
